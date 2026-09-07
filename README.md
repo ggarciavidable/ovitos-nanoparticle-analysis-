@@ -81,3 +81,7 @@ The scripts are provided primarily for transparency, reproducibility, and adapta
 ## References
 
 [1] M. Vergeles, A. Maritan, J. Koplik, and J. R. Banavar, “Adhesion of solids,” Physical Review E 56, 2626 (1997). https://doi.org/10.1103/PhysRevE.56.2626
+
+## Acknowledgements
+
+These scripts were developed as part of doctoral research in molecular dynamics of diamond nanostructures. The author gratefully acknowledges the guidance of Prof. Eduardo M. Bringa as well as discussions and support from colleagues at [Grupo SiMAF](URL institucional). Computational resources used in the associated research were provided by [Toko](https://toko.uncu.edu.ar/) and [UNC Supercómputo (Serafín y Mendieta)](https://supercomputo.unc.edu.ar/equipamiento/).
