@@ -47,7 +47,7 @@ The atomistic contact area is calculated using the relation proposed by Vergeles
 
 $$ A_c=\frac{2\pi}{N}\sum_{i=1}^{N} \left[(x_i-x_c)^2+(y_i-y_c)^2\right], $$
 
-where \(N\) is the number of atoms identified as being in contact with the indenter and \((x_c,y_c)\) is the in-plane center of mass of those atoms. In the present implementation, contact atoms are operationally defined as atoms lying within a cutoff distance vergelesCutoff × a0 from the indenter plane. The default values correspond to vergelesCutoff = 0.25 and a0 = 3.567 Å and should be reviewed when applying the script to other systems.
+where \(N\) is the number of atoms identified as being in contact with the indenter and $(x_c,y_c)$ is the in-plane center of mass of those atoms. In the present implementation, contact atoms are operationally defined as atoms lying within a cutoff distance vergelesCutoff × a0 from the indenter plane. The default values correspond to vergelesCutoff = 0.25 and a0 = 3.567 Å and should be reviewed when applying the script to other systems.
 
 By default, the script attempts to read relevant simulation parameters directly from a `log.diamond` or `log.lammps` file located in the same directory as the trajectory dump files. The parsing rules reflect the LAMMPS input conventions used in the original simulations and may require modification for other simulation setups.
 
