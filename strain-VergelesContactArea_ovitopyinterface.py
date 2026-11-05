@@ -3,38 +3,60 @@ OVITO modifier for estimating strain and atomistic contact area during planar
 compression of a nanoparticle.
 
 The script reconstructs indentation depth and compressive strain and estimates
-contact area using a Vergeles-type geometrical criterion. Relevant simulation
-parameters are read, when available, from log.diamond or log.lammps located in
-the same directory as the trajectory file.
+contact area using the relation proposed by Vergeles et al. for the lateral
+distribution of atoms identified as being in contact with the indenter.
+
+Relevant simulation parameters are read, when available, from log.diamond or
+log.lammps located in the same directory as the trajectory file. The parser
+recognizes the variable names used in the original simulation workflow.
 
 Developed and tested with OVITO 3.0.0-dev469. Compatibility with later OVITO
-versions has not been systematically tested. The log-file parsing rules and
-several geometric parameters reflect the original simulation workflow and may
-require adaptation for other setups.
+versions has not been systematically tested.
 
-Run using OVITO's Python Script Modifier. The generated global attributes can be
-exported through File -> Export File -> Table of Values.
+Loading-unloading simulations are supported when `unloadStep` is set manually
+to the timestep at which the indenter reverses direction. This assumes an
+immediate reversal, with no hold segment. Set `unloadStep = None` for monotonic
+loading simulations.
+
+Run using OVITO's Python Script Modifier. The generated global attributes can
+be exported through File -> Export File -> Table of Values.
 """
-from ovito.data import *
-import numpy as np
-from pathlib import Path
-def modify(frame, data):
-    #SIMULATION DATA (SET ACCORDING TO YOUR SIMULATION)
-    topIndenterPosition = 104.841224142732  #change to initial top indenter position
-    bottomIndenterPosition = -100.867687990085  #change to initial bottom indenter position
-    initialTopIndenterSeparation = 5.0  #set to initial gap between indenter and top atoms
-    initialFloorIndenterSeparation = 1.0  #set to initial gap between indenter and bottom atoms atoms
-    indentationRate = 0.1  #set your indentation rate
-    timestep = 0.001  #set the timestep of your simulation
-    unloadStep = 512000  #set unload step
 
-##########################################################################
-    #THE FOLLOWING CODE READS OUT THE SIMULATION DATA FROM THE LOG FILE, 
-    #COMMENT THESE LINES OUT IF YOU HAVE SET THE VALUES MANUALLY
-    sourceFile = Path(data.attributes['SourceFile'])
+from pathlib import Path
+
+import numpy as np
+from ovito.data import *
+
+
+def modify(frame, data):
+    # -------------------------------------------------------------------------
+    # Simulation parameters
+    # Defaults correspond to the original workflow and are overwritten by
+    # values parsed from log.diamond/log.lammps when matching definitions exist.
+    # -------------------------------------------------------------------------
+    topIndenterPosition = 104.841224142732
+    bottomIndenterPosition = -100.867687990085
+    initialTopIndenterSeparation = 5.0
+    initialFloorIndenterSeparation = 1.0
+    indentationRate = 0.1
+    timestep = 0.001
+
+    # Set to an integer timestep for immediate load -> unload reversal.
+    # Leave as None for monotonic loading. Hold segments are not represented.
+    unloadStep = None
+
+    # Operational parameters of the contact definition used in the
+    # diamond-nanoparticle simulations.
+    a0 = 3.567
+    vergelesCutoff = 0.25
+
+    # -------------------------------------------------------------------------
+    # Read simulation parameters from the log file
+    # -------------------------------------------------------------------------
+    sourceFile = Path(data.attributes["SourceFile"])
     dumpDirectory = sourceFile.parent
-    diamondLog = dumpDirectory / 'log.diamond'
-    lammpsLog = dumpDirectory / 'log.lammps'
+    diamondLog = dumpDirectory / "log.diamond"
+    lammpsLog = dumpDirectory / "log.lammps"
 
     if diamondLog.is_file():
         logFile = diamondLog
@@ -42,119 +64,204 @@ def modify(frame, data):
         logFile = lammpsLog
     else:
         raise FileNotFoundError(
-            "No 'log.diamond' or 'log.lammps' file was found in the trajectory directory: "
-            f"{dumpDirectory}"
+            "No 'log.diamond' or 'log.lammps' file was found in the trajectory "
+            f"directory: {dumpDirectory}"
         )
 
-    with logFile.open() as f :
-        for l in f :
-            if l.startswith('variable       rate equal ') :
-                indentationRate = float(l.split()[3])
-            elif l.startswith('timestep        ') :
-                timestep = float(l.split()[1])
-            elif l.startswith('variable       zmax0 equal ') and '${' not in l :
-                topIndenterPosition = float(l.split()[-1])
-            elif l.startswith('variable       zmin0 equal') and '${' not in l :
-                bottomIndenterPosition = float(l.split()[-1])
-            elif l.startswith('variable       zmax equal "c_zmax+') and '.' in l :
-                initialTopIndenterSeparation = float(l.split()[-1].split('+')[-1][:-1])
-            elif l.startswith('variable       zmin equal "c_zmin-') and '.' in l :
-                initialFloorIndenterSeparation = float(l.split()[-1].split('-')[-1][:-1])
-#########################################################################################
-    ##CONSTANTS
-    INIT_INDENTER_POS = topIndenterPosition  #INITIAL TOP INDENTER POSITION
-    INIT_FLOOR_POS = bottomIndenterPosition  #INITIAL BOTTOM INDENTER POSITION
-    TOP_INIT_GAP = initialTopIndenterSeparation  #INITIAL UPPER GAP BETWEEN SAMPLE AND TOP INDENTER
-    FLOOR_INIT_GAP = initialFloorIndenterSeparation  #INITIAL LOWER GAP BETWEEN SAMPLE AND BOTTOM INDENTER
-    D = INIT_INDENTER_POS-TOP_INIT_GAP-INIT_FLOOR_POS-FLOOR_INIT_GAP  #INITIAL DIAMETER OF THE SPHERICAL NP ALONG INDENTATION AXIS
-    TIMESTEP = timestep  #SIMULATION TIMESTEP
-    INDENTATION_RATE = indentationRate  #INDENTATION RATE
-    #THE FOLLOWING TWO CONSTANTS ARE USED TO SELECT CONTACT AREA ATOMS AS THOSE THAT ARE SOME FRACTION "vergelesCutoff" OF THE CRYSTAL'S LATTICE PAREMETER a0 AWAY FROM THE TOP INDENTER
-    # Operational parameters of the atomistic contact definition used in the
-    # original diamond-nanoparticle simulations; adjust for other systems.
-    a0 = 3.567  # lattice parameter
-    vergelesCutoff = 0.25  # contact cutoff expressed as a fraction of a0
-    CURRENT_TIMESTEP = data.attributes['Timestep']  #STORES THE STEP NUMBER OF THE CURRENT FRAME OF THE SIMULATION
-    ##VERGELES AREA
-    ###UPPER CONTACT AREA
-    particlePosition = data.particles.position
-    maxZ = np.max(particlePosition[:,2])
-    minZ = np.min(particlePosition[:,2])
-    indenterStep = CURRENT_TIMESTEP*TIMESTEP*INDENTATION_RATE
-    indenterPosition = INIT_INDENTER_POS - indenterStep
-    indenterLoadUnloadPosition = INIT_INDENTER_POS + (np.abs(unloadStep-CURRENT_TIMESTEP)-unloadStep)*INDENTATION_RATE*TIMESTEP
-    contactAreaAtoms = particlePosition[particlePosition[:,2]>indenterPosition-vergelesCutoff*a0]
-    Ntop = np.shape(contactAreaAtoms)[0]
-    xyProjectionTop = contactAreaAtoms[:,:2] 
-    centreOfMassXYTop = np.mean(xyProjectionTop,axis=0)
-    minMaxStrain = (D-(maxZ-minZ))/D
+    with logFile.open() as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
 
-    if Ntop!=0 :
-        upperAreaVergeles = 2*np.pi*np.sum(np.power(xyProjectionTop-centreOfMassXYTop,2))/Ntop
-        upperAreaVergelesRadius = np.sqrt(2*np.sum(np.power(xyProjectionTop-centreOfMassXYTop,2))/Ntop)
-    else :
+            tokens = stripped.split()
+
+            if len(tokens) >= 4 and tokens[:3] == ["variable", "rate", "equal"]:
+                indentationRate = float(tokens[3])
+
+            elif tokens and tokens[0] == "timestep" and len(tokens) >= 2:
+                timestep = float(tokens[1])
+
+            elif len(tokens) >= 4 and tokens[:3] == ["variable", "zmax0", "equal"]:
+                value = tokens[3]
+                if "${" not in value:
+                    try:
+                        topIndenterPosition = float(value)
+                    except ValueError:
+                        pass
+
+            elif len(tokens) >= 4 and tokens[:3] == ["variable", "zmin0", "equal"]:
+                value = tokens[3]
+                if "${" not in value:
+                    try:
+                        bottomIndenterPosition = float(value)
+                    except ValueError:
+                        pass
+
+            elif len(tokens) >= 4 and tokens[:3] == ["variable", "zmax", "equal"]:
+                expression = tokens[3].strip('"')
+                if expression.startswith("c_zmax+"):
+                    try:
+                        initialTopIndenterSeparation = float(
+                            expression.split("+", 1)[1]
+                        )
+                    except ValueError:
+                        pass
+
+            elif len(tokens) >= 4 and tokens[:3] == ["variable", "zmin", "equal"]:
+                expression = tokens[3].strip('"')
+                if expression.startswith("c_zmin-"):
+                    try:
+                        initialFloorIndenterSeparation = float(
+                            expression.split("-", 1)[1]
+                        )
+                    except ValueError:
+                        pass
+
+    # -------------------------------------------------------------------------
+    # Geometry and indenter motion
+    # -------------------------------------------------------------------------
+    INIT_INDENTER_POS = topIndenterPosition
+    INIT_FLOOR_POS = bottomIndenterPosition
+    TOP_INIT_GAP = initialTopIndenterSeparation
+    FLOOR_INIT_GAP = initialFloorIndenterSeparation
+
+    # Initial nanoparticle extent along the loading axis.
+    D = (
+        INIT_INDENTER_POS
+        - TOP_INIT_GAP
+        - INIT_FLOOR_POS
+        - FLOOR_INIT_GAP
+    )
+
+    CURRENT_TIMESTEP = data.attributes["Timestep"]
+
+    loadingDisplacement = CURRENT_TIMESTEP * timestep * indentationRate
+
+    if unloadStep is None:
+        actualDisplacement = loadingDisplacement
+    else:
+        # Immediate reversal at unloadStep, with the same speed on unloading.
+        if CURRENT_TIMESTEP <= unloadStep:
+            actualDisplacement = loadingDisplacement
+        else:
+            displacementAtReversal = unloadStep * timestep * indentationRate
+            actualDisplacement = (
+                displacementAtReversal
+                - (CURRENT_TIMESTEP - unloadStep) * timestep * indentationRate
+            )
+
+    indenterPosition = INIT_INDENTER_POS - actualDisplacement
+
+    # -------------------------------------------------------------------------
+    # Atomistic contact area
+    # -------------------------------------------------------------------------
+    particlePosition = data.particles.position
+    maxZ = np.max(particlePosition[:, 2])
+    minZ = np.min(particlePosition[:, 2])
+
+    contactAreaAtoms = particlePosition[
+        particlePosition[:, 2] > indenterPosition - vergelesCutoff * a0
+    ]
+    Ntop = np.shape(contactAreaAtoms)[0]
+
+    if Ntop != 0:
+        xyProjectionTop = contactAreaAtoms[:, :2]
+        centreOfMassXYTop = np.mean(xyProjectionTop, axis=0)
+        squaredRadialDistances = np.sum(
+            np.power(xyProjectionTop - centreOfMassXYTop, 2), axis=1
+        )
+        upperAreaVergeles = 2 * np.pi * np.sum(squaredRadialDistances) / Ntop
+        upperAreaVergelesRadius = np.sqrt(
+            2 * np.sum(squaredRadialDistances) / Ntop
+        )
+    else:
         upperAreaVergeles = 0.0
         upperAreaVergelesRadius = 0.0
-    ###LOWER CONTACT AREA
-    bottomAtoms = particlePosition[particlePosition[:,2]<INIT_FLOOR_POS+vergelesCutoff*a0]
+
+    bottomAtoms = particlePosition[
+        particlePosition[:, 2] < INIT_FLOOR_POS + vergelesCutoff * a0
+    ]
     Nfloor = np.shape(bottomAtoms)[0]
-    xyProjectionFloor = bottomAtoms[:,:2]
-    centreOfMassXYFloor = np.mean(xyProjectionFloor,axis=0)
-    if Nfloor!=0 :
-        lowerAreaVergeles = 2*np.pi*np.sum(np.power(xyProjectionFloor-centreOfMassXYFloor,2))/Nfloor
-    else :
+
+    if Nfloor != 0:
+        xyProjectionFloor = bottomAtoms[:, :2]
+        centreOfMassXYFloor = np.mean(xyProjectionFloor, axis=0)
+        squaredFloorDistances = np.sum(
+            np.power(xyProjectionFloor - centreOfMassXYFloor, 2), axis=1
+        )
+        lowerAreaVergeles = 2 * np.pi * np.sum(squaredFloorDistances) / Nfloor
+    else:
         lowerAreaVergeles = 0.0
-    
-    ##INDENTATION DEPTH
-    if indenterStep < TOP_INIT_GAP + FLOOR_INIT_GAP :
-        h = 0
-        H = 0
-    else :
-        h = indenterStep - TOP_INIT_GAP - FLOOR_INIT_GAP
-        H = INIT_INDENTER_POS-indenterLoadUnloadPosition - TOP_INIT_GAP - FLOOR_INIT_GAP
-        
-    ##ANALYTICAL AREA EXPRESSION
-    if h != 0 :
-        analyticArea = np.pi*np.power((h/2)*np.sqrt((2*D/h) - 1),2)
-        analyticRadius = (h/2)*np.sqrt((2*D/h) - 1)
-    else :
-        analyticArea = 0
-        analyticRadius = 0
-    ##ACCURATE STRAIN
-    if indenterStep < TOP_INIT_GAP + FLOOR_INIT_GAP :
-        strain = 0
-        accStrain = 0
-    else :
-        strain = h/D
-        accStrain = H/D
-    if minMaxStrain<1e-5 :
-        minMaxStrain = 0
-    
-    #OUTPUT GLOBAL VALUES
+
+    # -------------------------------------------------------------------------
+    # Strain and indentation depth
+    # -------------------------------------------------------------------------
+    totalInitialGap = TOP_INIT_GAP + FLOOR_INIT_GAP
+
+    if actualDisplacement < totalInitialGap:
+        indentationDepth = 0.0
+        strain = 0.0
+    else:
+        indentationDepth = actualDisplacement - totalInitialGap
+        strain = indentationDepth / D
+
+    # Loading-only displacement/strain retained as diagnostic quantities.
+    if loadingDisplacement < totalInitialGap:
+        loadingIndentationDepth = 0.0
+        loadingStrain = 0.0
+    else:
+        loadingIndentationDepth = loadingDisplacement - totalInitialGap
+        loadingStrain = loadingIndentationDepth / D
+
+    minMaxStrain = (D - (maxZ - minZ)) / D
+    if minMaxStrain < 1e-5:
+        minMaxStrain = 0.0
+
+    # Analytical projected area for an ideal sphere compressed symmetrically.
+    if indentationDepth > 0.0 and indentationDepth < 2 * D:
+        analyticRadius = (
+            indentationDepth
+            / 2
+            * np.sqrt((2 * D / indentationDepth) - 1)
+        )
+        analyticArea = np.pi * analyticRadius**2
+    else:
+        analyticArea = 0.0
+        analyticRadius = 0.0
+
+    # -------------------------------------------------------------------------
+    # OVITO global attributes
+    # -------------------------------------------------------------------------
     data.attributes["upCAVergeles"] = upperAreaVergeles
     data.attributes["lowerContactAreaVergeles"] = lowerAreaVergeles
     data.attributes["indenterPosition"] = indenterPosition
-    data.attributes["indentationDepth"] = h
+    data.attributes["indentationDepth"] = indentationDepth
     data.attributes["analyticArea"] = analyticArea
     data.attributes["strain"] = strain
-    data.attributes["strain%"] = np.round(strain*100)
+    data.attributes["strain%"] = strain * 100.0
     data.attributes["realDiameter"] = D
     data.attributes["bottomIndenterPosition"] = INIT_FLOOR_POS
-    data.attributes["a0"] =  a0
+    data.attributes["a0"] = a0
     data.attributes["VergelesCutoff"] = vergelesCutoff
-    data.attributes["VRadius"] = upperAreaVergelesRadius 
+    data.attributes["VRadius"] = upperAreaVergelesRadius
     data.attributes["AnalyticRadius"] = analyticRadius
     data.attributes["ZMAX"] = maxZ
     data.attributes["ZMIN"] = minZ
-    data.attributes["strainFromLoadUnloadFormula"] = accStrain
+    data.attributes["loadingStrain"] = loadingStrain
     data.attributes["min-max-Strain"] = minMaxStrain
-    
-    #SCREEN OUTPUT
-    print("Depths:\n h H\n",h,H)
-    print("strain from loading formula\n",strain)
-    print("strain from load-unload formula\n",accStrain)
-    print("min-max-Strain\n",minMaxStrain)
-    print("indenter Position",indenterPosition)
-    print("Upper contact area\n",upperAreaVergeles)
-    print("Max Z coord\n",maxZ)
-    print(upperAreaVergelesRadius)
+
+    # Backward-compatible name used by earlier versions of this script.
+    data.attributes["strainFromLoadUnloadFormula"] = strain
+
+    # -------------------------------------------------------------------------
+    # Screen output
+    # -------------------------------------------------------------------------
+    print("Indentation depth:", indentationDepth)
+    print("Strain:", strain)
+    print("Loading-only strain:", loadingStrain)
+    print("Min-max strain:", minMaxStrain)
+    print("Indenter position:", indenterPosition)
+    print("Upper contact area:", upperAreaVergeles)
+    print("Max Z coordinate:", maxZ)
+    print("Vergeles contact radius:", upperAreaVergelesRadius)
