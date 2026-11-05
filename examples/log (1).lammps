@@ -1,0 +1,27 @@
+# Reduced LAMMPS log for the example trajectory.
+#
+# This file contains only the simulation parameters required by
+# strain-VergelesContactArea_ovitopyinterface.py. Values were extracted from
+# the original production log of the 10 nm diamond nanoparticle compression
+# simulation. It is not the complete production log.
+#
+# Units: LAMMPS "metal" units.
+# Loading protocol for this example: monotonic planar compression.
+
+variable       rate equal 0.1
+timestep        0.001
+
+# Operational gaps between the nanoparticle and the planar indenters.
+variable       zmin equal "c_zmin-1.0"
+variable       zmax equal "c_zmax+5.0"
+
+# Initial positions of the lower and upper indenter planes.
+# The parser ignores the symbolic assignment lines and reads the numerical
+# assignments below.
+variable       zmin0 equal ${zmin}
+variable       zmin0 equal -50.8887982605953
+variable       zmax0 equal ${zmax}
+variable       zmax0 equal 54.9500851937127
+
+# Original loading definition retained for provenance.
+variable       r equal "v_zmax0 - step*dt*v_rate"
