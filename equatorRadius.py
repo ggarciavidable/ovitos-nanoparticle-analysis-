@@ -38,7 +38,15 @@ def modify(frame, data):
     stdZmax1pc = np.std(zCoords[0:data.particles.count//100] )
     stdZmax01pc = np.std(zCoords[0:data.particles.count//1000] )
     diffPerCent = (maxR-meanDistance)/maxR
-    print("Std diff%:\n",stdDistance,diffPerCent)
+    print(
+    f"Frame {frame}\n"
+    f"Projected radius (max): {maxR:.6f}\n"
+    f"Projected radius (outermost 1% mean): {meanDistance:.6f}\n"
+    f"Projected radius std (outermost 1%): {stdDistance:.6f}\n"
+    f"Relative max-mean difference: {diffPerCent:.6f}\n"
+    f"Top z mean (1%): {mean1pcTopZ:.6f}\n"
+    f"Bottom z mean (1%): {mean1pcFloorZ:.6f}"
+    )
     data.attributes['NP-eqrad_mean'] = meanDistance
     data.attributes['std-NP-eqrad'] = stdDistance
     data.attributes['NP-eqrad_max'] = maxR
