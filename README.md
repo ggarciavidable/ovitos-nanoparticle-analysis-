@@ -1,5 +1,7 @@
 # OVITO analysis utilities for nanoparticle compression simulations
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24022685.svg)](https://doi.org/10.5281/zenodo.24022685)
+
 This repository contains small Python scripts developed for the post-processing of molecular dynamics simulations of diamond nanoparticles under indentation.
 
 The scripts were originally written as research utilities for a specific simulation workflow rather than as a general-purpose software package. They are made available to facilitate reproducibility and reuse of the analysis procedures employed in the associated doctoral research.
